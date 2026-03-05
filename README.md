@@ -1,10 +1,7 @@
-# UWPOCR
+# VBA-WinOCR
 
-[![Latest Version](https://img.shields.io/badge/Latest-v1.0.0-green.svg)]()
-[![MIT License](https://img.shields.io/github/license/mashape/apistatus.svg)]()
-[![Made with Love](https://img.shields.io/badge/Made%20with-%E2%9D%A4-red.svg?colorB=e31b23)]()
-
-VBA-UWPOCR is a simple library to use Universal Windows Platform Optical character recognition API.
+VBA-WinOCR is a simple library to use Universal Windows Platform Optical character recognition API.
+Based on 
 
 ## Features
 
@@ -16,13 +13,22 @@ VBA-UWPOCR is a simple library to use Universal Windows Platform Optical charact
 ##### Basic use:
 
 ```VB
-    Dim ocr As New UWPOCR
+    Dim ocr As New WinOCR
 
     MsgBox ocr.ImageToText(ThisWorkbook.Path & "\Images\Image1.png")(0)
 
 ```
 
 <!-- ##### More examples [here.](/Examples) -->
+
+## Changes from original
+Forked from [DanysysTeam/VBA-UWPOCR](https://github.com/DanysysTeam/VBA-UWPOCR).
+
+- Replaced `Kernel32.dll` (`RtlMoveMemory`) with `msvcrt.dll` (`memcpy`) 
+  to avoid triggering Windows Defender on certain corporate environments
+- Added timeout/retry counter to `WaitForAsyncInterface`
+- Fixed `RECT` type fields from `Single` to `Long`
+- Fixed `ResultArray` indexing bug in word array mode
 
 ## Release History
 
@@ -35,3 +41,4 @@ See [CHANGELOG.md](CHANGELOG.md)
 Usage is provided under the [MIT](https://choosealicense.com/licenses/mit/) License.
 
 Copyright © 2024, [Danysys.](https://www.danysys.com)
+Copyright © 2026, [rafae-yml](https://rafael-yml.lovable.app/)
