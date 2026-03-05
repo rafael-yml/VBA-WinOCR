@@ -41,4 +41,5 @@ See [CHANGELOG.md](CHANGELOG.md)
 Usage is provided under the [MIT](https://choosealicense.com/licenses/mit/) License.
 
 Copyright © 2024, [Danysys.](https://www.danysys.com)
+
 Copyright © 2026, [rafael-yml](https://rafael-yml.lovable.app/)
