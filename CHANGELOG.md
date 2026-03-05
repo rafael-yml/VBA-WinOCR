@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## 1.1.0 - 2626-03-05
+## 1.1.0 - 2626-03-06
 Forked from [DanysysTeam/VBA-UWPOCR](https://github.com/DanysysTeam/VBA-UWPOCR).
 
 - Replaced `Kernel32.dll` (`RtlMoveMemory`) with `msvcrt.dll` (`memcpy`) 
