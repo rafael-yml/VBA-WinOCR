@@ -2,25 +2,28 @@ VERSION 1.0 CLASS
 BEGIN
   MultiUse = -1  'True
 END
-Attribute VB_Name = "UWPOCR"
+Attribute VB_Name = "WinOCR"
 Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
 '''' Copyright
 '    Copyright 2024 Danysys. <hello@danysys.com>
+'    Copyright 2026 rafael-yml. <https://rafael-yml.lovable.app/>
 '    Licensed under the MIT license.
 '    See LICENSE file or go to https://opensource.org/licenses/MIT for details.
 '''' Copyright
 
 '''' Information
 '    Author(s)......: DanysysTeam (Danyfirex & Dany3j)
+'                     rafael-yml
 '    Description....: UWP OCR Universal Windows Platform Optical character recognition
-'    Remarks........: The current implementation is designed for using under Windows 10
-'    Version........: 1.0.0
+'    Remarks........: The current implementation is designed for using under Windows 11
+'    Version........: 1.1.0
 '    Thanks to .....:
 '                     Jaafar Tribak - vtblCall - https://www.mrexcel.com/board/threads/late-bound-windows-media-player-going-out-of-scope.1245903/post-6110097
 
+'    2026.03.06 - rafael-yml: Fixed lines referencing low level .dll calls that caused Defender to unintentionally block execution after Defender update
 '''' Information
 
 
@@ -35,16 +38,15 @@ Private Type GUID
 End Type
 
 Private Type RECT
-    x As Single
-    Y As Single
-    Width As Single
-    Height As Single
+    x As Long
+    Y As Long
+    Width As Long
+    Height As Long
 End Type
 
 #If VBA7 Then
-    Private Declare PtrSafe Sub CopyMemory Lib "Kernel32" Alias "RtlMoveMemory" (Destination As Any, Source As Any, ByVal Length As LongPtr)
+    Private Declare PtrSafe Sub MemoryCopy Lib "msvcrt.dll" Alias "memcpy" (ByVal Destination As LongPtr, ByVal Source As LongPtr, ByVal Length As LongPtr)
     Private Declare PtrSafe Function DispCallFunc Lib "oleAut32.dll" (ByVal pvInstance As LongPtr, ByVal offsetinVft As LongPtr, ByVal CallConv As Long, ByVal retTYP As Integer, ByVal paCNT As Long, ByRef paTypes As Integer, ByRef paValues As LongPtr, ByRef retVAR As Variant) As Long
-    Private Declare PtrSafe Sub SetLastError Lib "kernel32.dll" (ByVal dwErrCode As Long)
     Private Declare PtrSafe Function CLSIDFromString Lib "ole32" (ByVal OleStringCLSID As LongPtr, ByRef cGUID As Any) As Long
     Private Declare PtrSafe Function RoGetActivationFactory Lib "Combase.dll" (ByVal activatableClassId As LongPtr, ByRef riid As GUID, ByRef factory As LongPtr) As Long
     Private Declare PtrSafe Function WindowsCreateString Lib "Combase.dll" (ByVal sourceString As LongPtr, ByVal Length As Long, ByRef hString As LongPtr) As Long
@@ -52,13 +54,13 @@ End Type
     Private Declare PtrSafe Function WindowsGetStringRawBuffer Lib "Combase.dll" (ByVal hString As LongPtr, ByRef Length As Long) As LongPtr
     Private Declare PtrSafe Function CreateRandomAccessStreamOnFile Lib "Shcore.dll" (ByVal pFilePath As LongPtr, ByVal Access As Long, ByRef riid As GUID, ByRef ppv As LongPtr) As Long
 #Else
+    Private Declare Sub MemoryCopy Lib "msvcrt.dll" Alias "memcpy" (ByVal Destination As Long, ByVal Source As Long, ByVal Length As Long)
+
     Private Enum LongPtr
         [_]
     End Enum
 
-    Private Declare Sub CopyMemory Lib "Kernel32" Alias "RtlMoveMemory" (Destination As Any, Source As Any, ByVal Length As Long)
     Private Declare Function DispCallFunc Lib "oleAut32.dll" (ByVal pvInstance As Long, ByVal offsetinVft As Long, ByVal CallConv As Long, ByVal retTYP As Integer, ByVal paCNT As Long, ByRef paTypes As Integer, ByRef paValues As Long, ByRef retVAR As Variant) As Long
-    Private Declare Sub SetLastError Lib "kernel32.dll" (ByVal dwErrCode As Long)
     Private Declare Function CLSIDFromString Lib "ole32" (ByVal OleStringCLSID As Long, ByRef cGUID As Any) As Long
     Private Declare Function RoGetActivationFactory Lib "Combase.dll" (ByVal activatableClassId As Long, ByRef riid As GUID, ByRef factory As Long) As Long
     Private Declare Function WindowsCreateString Lib "Combase.dll" (ByVal sourceString As Long, ByVal Length As Long, ByRef hString As Long) As Long
@@ -97,7 +99,7 @@ Private Sub Initialize()
 End Sub
 
 Public Function ImageToText(ByVal PathImage As String, Optional ByVal Language As String = "", Optional ByVal UseLines As Boolean = False, Optional ByVal ReturnWordsArray As Boolean = False) As Variant
-    Dim Result As String
+    Dim result As String
     Dim ResultArray() As Variant
     ReDim ResultArray(0)
     
@@ -160,7 +162,7 @@ Public Function ImageToText(ByVal PathImage As String, Optional ByVal Language A
                             If pIOCRLine <> 0 Then
                                 'pIOCRLine.GetText
                                 Call vtblCall(pIOCRLine, 7 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(hStringLine))
-                                Result = Result & HStringToVBAString(hStringLine) & vbCrLf
+                                result = result & HStringToVBAString(hStringLine) & vbCrLf
                                 WindowsDeleteString hStringLine
                                 If ReturnWordsArray Then
                                     Dim pFIVOcrWords As LongPtr
@@ -174,14 +176,21 @@ Public Function ImageToText(ByVal PathImage As String, Optional ByVal Language A
                                         Dim hStringWord As LongPtr
                                         Dim x As Long
                                         If NumberOfWords > 0 Then
-                                            ReDim Preserve ResultArray(UBound(ResultArray) + NumberOfWords)
+                                            Dim currentUBound As Long
+                                            If UBound(ResultArray) = 0 And IsEmpty(ResultArray(0)) Then
+                                                currentUBound = -1
+                                            Else
+                                                currentUBound = UBound(ResultArray)
+                                            End If
+                                            ReDim Preserve ResultArray(currentUBound + NumberOfWords)
+
                                             For x = 0 To NumberOfWords - 1
                                                 'pFIVOcrWords.GetAt
                                                 Call vtblCall(pFIVOcrWords, 6 * PTR_SIZE, vbLong, CC_STDCALL, x, VarPtr(pIOCRWord))
                                                 If pIOCRWord <> 0 Then
                                                     'pFIVOcrWords.GetTect
                                                     Call vtblCall(pIOCRWord, 7 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(hStringWord))
-                                                    Dim pRect As RECT
+                                                    Dim pRect As RECT ' RECT type is now Longs
                                                     Call vtblCall(pIOCRWord, 6 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pRect))
                                                     Dim WordInfo(4) As Variant
                                                     
@@ -191,7 +200,7 @@ Public Function ImageToText(ByVal PathImage As String, Optional ByVal Language A
                                                     WordInfo(3) = pRect.Width
                                                     WordInfo(4) = pRect.Height
                                                     
-                                                    ResultArray(x + UBound(ResultArray) - NumberOfWords + 1) = WordInfo
+                                                    ResultArray(currentUBound + 1 + x) = WordInfo
                                                     WindowsDeleteString hStringWord
                                                 End If
                                             Next
@@ -207,12 +216,12 @@ Public Function ImageToText(ByVal PathImage As String, Optional ByVal Language A
                 Dim hStringResult As LongPtr
                 'pIOcrResult.Text
                 Call vtblCall(pIOcrResult, 8 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(hStringResult))
-                Result = HStringToVBAString(hStringResult)
+                result = HStringToVBAString(hStringResult)
                 WindowsDeleteString hStringResult
             End If
         End If
     End If
-    ResultArray(0) = Result
+    ResultArray(0) = result
     ImageToText = ResultArray
 End Function
 
@@ -224,7 +233,7 @@ Private Function GetOcrResult(ByRef pIBitmapDecoder As LongPtr) As LongPtr
             Dim Width As Long: Width = GetBitmapWidth(pIBitmapFrame)
             Dim Height As Long: Height = GetBitmapHeight(pIBitmapFrame)
             Dim MaxImageDimension As Long: Call vtblCall(pIOcrEngineStatics, 6 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(MaxImageDimension))
-            If MaxImageDimension > Width And MaxImageDimension > Height Then
+            If MaxImageDimension >= Width And MaxImageDimension >= Height Then
                 Dim pIBitmapFrameWithSoftwareBitmap As LongPtr: pIBitmapFrameWithSoftwareBitmap = GetBitmapFrameWithSoftwareBitmap(pIBitmapDecoder)
                 If pIBitmapFrameWithSoftwareBitmap <> 0 Then
                     Dim pISoftwareBitmap As LongPtr
@@ -259,11 +268,10 @@ Public Function GetSupportedLanguages() As Collection
     Set Languages = New Collection
    
     
-    Dim pFIVLanguages As LongPtr                 'pointer to IID___FIVectorView_1_HSTRING
+    Dim pFIVLanguages As LongPtr
     'pIGlobalizationPreferencesStatics.GetLanguages
     Call vtblCall(pIGlobalizationPreferencesStatics, 9 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pFIVLanguages))
     
-    'MsgBox pFIVLanguages
     Dim iCountLenguages As Long
     'pFIVLanguages.GetSize
     Call vtblCall(pFIVLanguages, 7 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(iCountLenguages))
@@ -367,10 +375,19 @@ Private Function WaitForAsyncInterface(ByRef pIBitmapDecoder As LongPtr) As Bool
     Call vtblCall(pIBitmapDecoder, 0 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pGUID), VarPtr(pIAsyncInfo))
      
     Dim Status As Long
+    Dim lRetryCount As Long
+    Const MAX_RETRIES As Long = 500000
+    
     Do
         DoEvents
         'IID_IAsyncInfo.GetStatus
         Call vtblCall(pIAsyncInfo, 7 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(Status))
+        lRetryCount = lRetryCount + 1
+        If lRetryCount > MAX_RETRIES Then
+            Err.Raise 9999, "UWPOCR.WaitForAsyncInterface", "Timeout waiting for async operation to complete."
+            WaitForAsyncInterface = False
+            Exit Function
+        End If
     Loop Until Status <> 0
     
     Dim ErrorCode As Long
@@ -380,13 +397,14 @@ Private Function WaitForAsyncInterface(ByRef pIBitmapDecoder As LongPtr) As Bool
     Dim pINewBitmapDecoder As LongPtr
     'pIBitmapDecoder.GetResults
     Call vtblCall(pIBitmapDecoder, 8 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pINewBitmapDecoder))
+    
     pIBitmapDecoder = pINewBitmapDecoder
     
     If pINewBitmapDecoder = 0 Then
         ErrorCode = 1
     End If
 
-    WaitForAsyncInterface = (ErrorCode = 0) And Status = 1
+    WaitForAsyncInterface = (ErrorCode = 0) And (Status = 1)
   
 End Function
 
@@ -397,15 +415,19 @@ Private Function CreateStreamOnFile(ByVal PathImage As String) As LongPtr
     Call CreateRandomAccessStreamOnFile(StrPtr(PathImage), 0, pGUID, CreateStreamOnFile)
 End Function
 
+
 Private Function HStringToVBAString(ByVal hString As LongPtr) As String
     Dim pBuffer As LongPtr
     Dim iLength As Long
     Dim Buffer As String
+    
     iLength = 0
     pBuffer = WindowsGetStringRawBuffer(hString, iLength)
+    
     If pBuffer <> 0 And iLength <> 0 Then
         Buffer = String$(iLength, vbNull)
-        CopyMemory ByVal StrPtr(Buffer), ByVal pBuffer, iLength * 2
+        ' Use memcpy from msvcrt.dll
+        MemoryCopy ByVal StrPtr(Buffer), ByVal pBuffer, iLength * 2 ' iLength * 2 for WideChars
     End If
     
     HStringToVBAString = Buffer
@@ -437,6 +459,7 @@ Private Function vtblCall( _
         ) As Variant
 
     Dim vParamPtr() As LongPtr
+    Dim hr As Long ' HRESULT from DispCallFunc
 
     If InterfacePointer = 0& Or VTableOffset < 0& Then Exit Function
     If Not (FunctionReturnType And &HFFFF0000) = 0& Then Exit Function
@@ -459,19 +482,12 @@ Private Function vtblCall( _
         Next
     End If
 
-    pIndex = DispCallFunc(InterfacePointer, VTableOffset, CallConvention, FunctionReturnType, pCount, _
+    hr = DispCallFunc(InterfacePointer, VTableOffset, CallConvention, FunctionReturnType, pCount, _
                           vParamType(0), vParamPtr(0), vRtn)
-    If pIndex = 0& Then
+    If hr = 0& Then ' S_OK
         vtblCall = vRtn
     Else
-        SetLastError pIndex
+        Err.Raise Number:=vbObjectError + hr, Source:="UWPOCR.vtblCall", Description:="DispCallFunc failed with HRESULT: " & Hex$(hr)
     End If
 
 End Function
-
-
-
-
-
-
-
