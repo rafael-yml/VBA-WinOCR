@@ -17,18 +17,15 @@ Attribute VB_Exposed = False
 '''' Information
 '    Author(s)......: DanysysTeam (Danyfirex & Dany3j)
 '                     rafael-yml
+'
 '    Description....: UWP OCR Universal Windows Platform Optical character recognition
 '    Remarks........: The current implementation is designed for using under Windows 11
 '    Version........: 1.1.0
-'    Thanks to .....:
-'                     Jaafar Tribak - vtblCall - https://www.mrexcel.com/board/threads/late-bound-windows-media-player-going-out-of-scope.1245903/post-6110097
-
+'    Thanks to .....: Jaafar Tribak - vtblCall - https://www.mrexcel.com/board/threads/late-bound-windows-media-player-going-out-of-scope.1245903/post-6110097
+'
 '    2026.03.06 - rafael-yml: Fixed lines referencing low level .dll calls that caused Defender to unintentionally block execution after Defender update
 '''' Information
-
-
 Option Explicit
-
 
 Private Type GUID
     Data1 As Long
@@ -45,7 +42,7 @@ Private Type RECT
 End Type
 
 #If VBA7 Then
-    Private Declare PtrSafe Sub MemoryCopy Lib "msvcrt.dll" Alias "memcpy" (ByVal Destination As LongPtr, ByVal Source As LongPtr, ByVal Length As LongPtr)
+    Private Declare PtrSafe Sub MemoryCopy Lib "msvcrt.dll" Alias "memcpy" (ByVal Destination As LongPtr, ByVal source As LongPtr, ByVal Length As LongPtr)
     Private Declare PtrSafe Function DispCallFunc Lib "oleAut32.dll" (ByVal pvInstance As LongPtr, ByVal offsetinVft As LongPtr, ByVal CallConv As Long, ByVal retTYP As Integer, ByVal paCNT As Long, ByRef paTypes As Integer, ByRef paValues As LongPtr, ByRef retVAR As Variant) As Long
     Private Declare PtrSafe Function CLSIDFromString Lib "ole32" (ByVal OleStringCLSID As LongPtr, ByRef cGUID As Any) As Long
     Private Declare PtrSafe Function RoGetActivationFactory Lib "Combase.dll" (ByVal activatableClassId As LongPtr, ByRef riid As GUID, ByRef factory As LongPtr) As Long
@@ -487,7 +484,7 @@ Private Function vtblCall( _
     If hr = 0& Then ' S_OK
         vtblCall = vRtn
     Else
-        Err.Raise Number:=vbObjectError + hr, Source:="UWPOCR.vtblCall", Description:="DispCallFunc failed with HRESULT: " & Hex$(hr)
+        Err.Raise Number:=vbObjectError + hr, source:="UWPOCR.vtblCall", Description:="DispCallFunc failed with HRESULT: " & Hex$(hr)
     End If
 
 End Function
