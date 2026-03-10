@@ -3,6 +3,7 @@
 VBA class for extracting text from images using the native Windows OCR engine (`Windows.Media.Ocr`), via direct WinRT vtable calls. No external tools, no shell execution, no admin rights, no installs.
 
 Based on [DanysysTeam/VBA-UWPOCR](https://github.com/DanysysTeam/VBA-UWPOCR).
+Thanks to [Jaafar Tribak - vtblCall](https://www.mrexcel.com/board/threads/late-bound-windows-media-player-going-out-of-scope.1245903/post-6110097)
 
 ---
 
@@ -139,4 +140,5 @@ All DLLs are present on every modern Windows installation.
 MIT License. See [LICENSE](LICENSE) for details.
 
 Copyright © 2024, [Danysys](https://www.danysys.com)
+
 Copyright © 2026, [rafael-yml](https://rafael-yml.lovable.app/)

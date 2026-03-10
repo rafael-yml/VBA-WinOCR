@@ -7,26 +7,6 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = False
 Attribute VB_Exposed = False
-'''' Copyright
-'    Copyright 2024 Danysys. <hello@danysys.com>
-'    Copyright 2026 rafael-yml. <https://rafael-yml.lovable.app/>
-'    Licensed under the MIT license.
-'    See LICENSE file or go to https://opensource.org/licenses/MIT for details.
-'''' Copyright
-
-'''' Information
-'    Author(s)......: DanysysTeam (Danyfirex & Dany3j)
-'                     rafael-yml
-'
-'    Description....: WinOCR Windows Optical character recognition
-'    Remarks........: The current implementation is designed for using under Windows 11
-'    Version........: 1.2.0
-'    Thanks to .....: Jaafar Tribak - vtblCall - https://www.mrexcel.com/board/threads/late-bound-windows-media-player-going-out-of-scope.1245903/post-6110097
-'
-'    2026.03.06 - rafael-yml: Fixed lines referencing low level .dll calls that caused Defender to unintentionally block execution after Defender update
-'    2026.03.10 - rafael-yml: Auto-scale oversized images before OCR (Fant interpolation); fixes ~40% accuracy loss on high-res inputs
-'                             Fixed hString/COM leaks. Added msvcrt _sleep to async poll loops.
-'''' Information
 Option Explicit
 
 Private Type GUID
