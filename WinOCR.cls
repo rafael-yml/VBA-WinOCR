@@ -33,7 +33,6 @@ End Type
     Private Declare PtrSafe Function WindowsGetStringRawBuffer Lib "Combase.dll" (ByVal hString As LongPtr, ByRef Length As Long) As LongPtr
     Private Declare PtrSafe Function CreateRandomAccessStreamOnFile Lib "Shcore.dll" (ByVal pFilePath As LongPtr, ByVal Access As Long, ByRef riid As GUID, ByRef ppv As LongPtr) As Long
     Private Declare PtrSafe Function RoActivateInstance Lib "Combase.dll" (ByVal activatableClassId As LongPtr, ByRef instance As LongPtr) As Long
-    Private Declare PtrSafe Sub MsvcrtSleep Lib "msvcrt.dll" Alias "_sleep" (ByVal dwMilliseconds As Long)
 #Else
     Private Declare Sub MemoryCopy Lib "msvcrt.dll" Alias "memcpy" (ByVal Destination As Long, ByVal Source As Long, ByVal Length As Long)
 
@@ -49,7 +48,6 @@ End Type
     Private Declare Function WindowsGetStringRawBuffer Lib "Combase.dll" (ByVal hString As Long, ByRef Length As Long) As Long
     Private Declare Function CreateRandomAccessStreamOnFile Lib "Shcore.dll" (ByVal pFilePath As Long, ByVal Access As Long, ByRef riid As GUID, ByRef ppv As Long) As Long
     Private Declare Function RoActivateInstance Lib "Combase.dll" (ByVal activatableClassId As Long, ByRef instance As Long) As Long
-    Private Declare Sub MsvcrtSleep Lib "msvcrt.dll" Alias "_sleep" (ByVal dwMilliseconds As Long)
 #End If
 
 
@@ -60,7 +58,6 @@ End Type
 #End If
 
 Private Const CC_STDCALL = 4
-Private Const OCR_MAX_PIXELS As Long = 5000000  ' Windows.Media.Ocr silently downsamples above this; we scale first for quality
 Private pILanguageFactory As LongPtr
 Private pIGlobalizationPreferencesStatics As LongPtr
 Private pIOcrEngineStatics As LongPtr
@@ -124,7 +121,6 @@ Public Function ImageToText(ByVal PathImage As String, Optional ByVal Language A
         Dim pIBitmapDecoder As LongPtr
         'pIBitmapDecoderStatics.CreateAsync
         Call vtblCall(pIBitmapDecoderStatics, 14 * PTR_SIZE, vbLong, CC_STDCALL, pIRandomAccessStream, VarPtr(pIBitmapDecoder))
-        ReleaseComPtr pIRandomAccessStream  ' decoder holds its own ref; we can release ours
         
         If pIBitmapDecoder <> 0 Then
             Dim pIOcrResult As LongPtr: pIOcrResult = GetOcrResult(pIBitmapDecoder)
@@ -173,7 +169,7 @@ Public Function ImageToText(ByVal PathImage As String, Optional ByVal Language A
                                                 'pFIVOcrWords.GetAt
                                                 Call vtblCall(pFIVOcrWords, 6 * PTR_SIZE, vbLong, CC_STDCALL, x, VarPtr(pIOCRWord))
                                                 If pIOCRWord <> 0 Then
-                                                    'pFIVOcrWords.GetText
+                                                    'pFIVOcrWords.GetTect
                                                     Call vtblCall(pIOCRWord, 7 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(hStringWord))
                                                     Dim pRect As RECT ' RECT type is now Longs
                                                     Call vtblCall(pIOCRWord, 6 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pRect))
@@ -210,90 +206,98 @@ Public Function ImageToText(ByVal PathImage As String, Optional ByVal Language A
     ImageToText = ResultArray
 End Function
 
-Private Function GetOcrResult(ByRef pIBitmapDecoder As LongPtr) As LongPtr
-    If Not WaitForAsyncInterface(pIBitmapDecoder) Then Exit Function
+' ---------------------------------------------------------------------------
+' Run OCR on image bytes supplied directly as a Byte array.
+' Returns the recognised text as a plain String. No files are written.
+' ---------------------------------------------------------------------------
+Public Function BytesToText(ByRef aImageBytes() As Byte, _
+                             Optional ByVal Language As String = "", _
+                             Optional ByVal UseLines As Boolean = False) As String
+    BytesToText = ""
+    If Not IsInitialized Then Initialize
+    If Not IsInitialized Then Exit Function
 
-    Dim pIBitmapFrame As LongPtr
-    pIBitmapFrame = GetBitmapFrame(pIBitmapDecoder)
-    If pIBitmapFrame = 0 Then Exit Function
+    ' Create an in-memory stream and load the image bytes into it via IStream.Write
+    Dim hMemRasClass As LongPtr
+    Call WindowsCreateString(StrPtr("Windows.Storage.Streams.InMemoryRandomAccessStream"), _
+                              Len("Windows.Storage.Streams.InMemoryRandomAccessStream"), hMemRasClass)
+    If hMemRasClass = 0 Then Exit Function
 
-    Dim imgW As Long: imgW = GetBitmapWidth(pIBitmapFrame)
-    Dim imgH As Long: imgH = GetBitmapHeight(pIBitmapFrame)
-    If imgW = 0 Or imgH = 0 Then Exit Function
+    Dim pMemStream As LongPtr
+    Call RoActivateInstance(hMemRasClass, pMemStream)
+    WindowsDeleteString hMemRasClass
+    If pMemStream = 0 Then Exit Function
 
-    ' Read the engine's per-dimension cap (2048 on old Windows, 5000 on Win10 1903+).
-    Dim MaxDim As Long
-    Call vtblCall(pIOcrEngineStatics, 6 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(MaxDim))
+    ' QI for IStream to get Write/Seek on the in-memory stream
+    Dim pIStreamGUID As GUID
+    Call CLSIDFromString(StrPtr("{0000000C-0000-0000-C000-000000000046}"), pIStreamGUID)
+    Dim pIStream As LongPtr
+    Call vtblCall(pMemStream, 0 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pIStreamGUID), VarPtr(pIStream))
+    If pIStream = 0 Then Exit Function
 
-    Dim pIBitmapFrameWSB As LongPtr
-    pIBitmapFrameWSB = GetBitmapFrameWithSoftwareBitmap(pIBitmapDecoder)
-    If pIBitmapFrameWSB = 0 Then Exit Function
+    ' Write all bytes into the stream (IStream.Write - offset 4)
+    Dim lByteCount As Long
+    lByteCount = UBound(aImageBytes) - LBound(aImageBytes) + 1
+    Dim lWritten As Long
+    Call vtblCall(pIStream, 4 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(aImageBytes(LBound(aImageBytes))), lByteCount, VarPtr(lWritten))
+    If lWritten <> lByteCount Then Exit Function
 
-    Dim pISoftwareBitmap As LongPtr
+    ' Seek back to start (STREAM_SEEK_SET=0) before BitmapDecoder reads the stream
+    Dim aDummy(0 To 7) As Byte
+    Call vtblCall(pIStream, 5 * PTR_SIZE, vbLong, CC_STDCALL, CCur(0), CLng(0), VarPtr(aDummy(0)))
 
-    ' Check both limits: per-dimension cap AND the ~5MP internal engine limit.
-    ' Exceeding either causes the engine to silently downsample with poor-quality
-    ' nearest-neighbour interpolation, which is the documented source of ~40% accuracy loss.
-    ' We scale first using Fant (bicubic-quality) interpolation to stay within both limits.
-    Dim needsScale As Boolean
-    needsScale = (imgW > MaxDim) Or (imgH > MaxDim) Or (CDbl(imgW) * CDbl(imgH) > CDbl(OCR_MAX_PIXELS))
+    ' Pass the in-memory stream to BitmapDecoder - identical call to ImageToText
+    Dim pIBitmapDecoder As LongPtr
+    Call vtblCall(pIBitmapDecoderStatics, 14 * PTR_SIZE, vbLong, CC_STDCALL, pMemStream, VarPtr(pIBitmapDecoder))
+    If pIBitmapDecoder = 0 Then Exit Function
 
-    If needsScale Then
-        ' Compute uniform scale factor to satisfy both constraints simultaneously.
-        Dim scaleFactor As Double
-        scaleFactor = 1#
-        If MaxDim > 0 Then
-            If imgW > MaxDim Then scaleFactor = CDbl(MaxDim) / CDbl(imgW)
-            If imgH > MaxDim Then
-                Dim scaleH As Double: scaleH = CDbl(MaxDim) / CDbl(imgH)
-                If scaleH < scaleFactor Then scaleFactor = scaleH
-            End If
-        End If
-        ' Also constrain by total pixel budget.
-        Dim scalePixels As Double
-        scalePixels = Sqr(CDbl(OCR_MAX_PIXELS) / CDbl(imgW * imgH))
-        If scalePixels < scaleFactor Then scaleFactor = scalePixels
-
-        Dim tgtW As Long: tgtW = CLng(imgW * scaleFactor)
-        Dim tgtH As Long: tgtH = CLng(imgH * scaleFactor)
-        If tgtW < 1 Then tgtW = 1
-        If tgtH < 1 Then tgtH = 1
-
-        ' Create a BitmapTransform to request a scaled decode with Fant interpolation.
-        ' Fant is the highest-quality mode (equivalent to bicubic area-average downsampling).
-        Dim hClassTrans As LongPtr
-        Call WindowsCreateString(StrPtr("Windows.Graphics.Imaging.BitmapTransform"), _
-                                 Len("Windows.Graphics.Imaging.BitmapTransform"), hClassTrans)
-        Dim pIBitmapTransform As LongPtr
-        Call RoActivateInstance(hClassTrans, pIBitmapTransform)
-        WindowsDeleteString hClassTrans
-
-        If pIBitmapTransform <> 0 Then
-            Call vtblCall(pIBitmapTransform, 7 * PTR_SIZE, vbLong, CC_STDCALL, CLng(tgtW))   ' set_ScaledWidth
-            Call vtblCall(pIBitmapTransform, 9 * PTR_SIZE, vbLong, CC_STDCALL, CLng(tgtH))   ' set_ScaledHeight
-            Call vtblCall(pIBitmapTransform, 11 * PTR_SIZE, vbLong, CC_STDCALL, CLng(3))     ' set_InterpolationMode = Fant
-
-            ' GetSoftwareBitmapTransformedAsync(format=Bgra8(87), alpha=Ignore(2),
-            '   transform, exifMode=IgnoreExifOrientation(0), colorMode=DoNotColorManage(0))
-            Call vtblCall(pIBitmapFrameWSB, 8 * PTR_SIZE, vbLong, CC_STDCALL, _
-                          CLng(87), CLng(2), pIBitmapTransform, CLng(0), CLng(0), _
-                          VarPtr(pISoftwareBitmap))
-            ReleaseComPtr pIBitmapTransform
-        End If
-    Else
-        ' Image is within both limits - decode as-is.
-        ' GetSoftwareBitmapAsync
-        Call vtblCall(pIBitmapFrameWSB, 6 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pISoftwareBitmap))
+    ' From here the path is identical to ImageToText
+    If Language = "" And Not Languages Is Nothing Then
+        If Languages.Count > 0 Then Language = Languages.Item(1)(0)
     End If
-
-    If pISoftwareBitmap = 0 Then Exit Function
-    If Not WaitForAsyncInterface(pISoftwareBitmap) Then Exit Function
+    If Language <> "" And pIOcrEngine = 0 Then CreateOcrEngine Language
+    If CurrentLanguage = "" Or CurrentLanguage <> Language Or pIOcrEngine = 0 Then
+        CreateOcrEngine Language
+    End If
+    If pIOcrEngine = 0 Then Exit Function
 
     Dim pIOcrResult As LongPtr
-    ' pIOcrEngine.RecognizeAsync
-    Call vtblCall(pIOcrEngine, 6 * PTR_SIZE, vbLong, CC_STDCALL, pISoftwareBitmap, VarPtr(pIOcrResult))
-    If WaitForAsyncInterface(pIOcrResult) Then
-        GetOcrResult = pIOcrResult
+    pIOcrResult = GetOcrResult(pIBitmapDecoder)
+    If pIOcrResult = 0 Then Exit Function
+
+    Dim hStringResult As LongPtr
+    Call vtblCall(pIOcrResult, 8 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(hStringResult))
+    BytesToText = HStringToVBAString(hStringResult)
+    WindowsDeleteString hStringResult
+End Function
+
+Private Function GetOcrResult(ByRef pIBitmapDecoder As LongPtr) As LongPtr
+    If WaitForAsyncInterface(pIBitmapDecoder) Then
+        Dim pIBitmapFrame As LongPtr
+        pIBitmapFrame = GetBitmapFrame(pIBitmapDecoder)
+        If pIBitmapFrame <> 0 Then
+            Dim Width As Long: Width = GetBitmapWidth(pIBitmapFrame)
+            Dim Height As Long: Height = GetBitmapHeight(pIBitmapFrame)
+            Dim MaxImageDimension As Long: Call vtblCall(pIOcrEngineStatics, 6 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(MaxImageDimension))
+            If MaxImageDimension >= Width And MaxImageDimension >= Height Then
+                Dim pIBitmapFrameWithSoftwareBitmap As LongPtr: pIBitmapFrameWithSoftwareBitmap = GetBitmapFrameWithSoftwareBitmap(pIBitmapDecoder)
+                If pIBitmapFrameWithSoftwareBitmap <> 0 Then
+                    Dim pISoftwareBitmap As LongPtr
+                    'pIBitmapFrameWithSoftwareBitmap.GetSoftwareBitmapAsync
+                    Call vtblCall(pIBitmapFrameWithSoftwareBitmap, 6 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pISoftwareBitmap))
+                    If pISoftwareBitmap <> 0 Then
+                        If WaitForAsyncInterface(pISoftwareBitmap) Then
+                            Dim pIOcrResult  As LongPtr
+                            'pIOcrEngine.RecognizeAsync
+                            Call vtblCall(pIOcrEngine, 6 * PTR_SIZE, vbLong, CC_STDCALL, pISoftwareBitmap, VarPtr(pIOcrResult))
+                            If WaitForAsyncInterface(pIOcrResult) Then
+                                GetOcrResult = pIOcrResult
+                            End If
+                        End If
+                    End If
+                End If
+            End If
+        End If
     End If
 End Function
 
@@ -378,11 +382,9 @@ Private Sub CreateOcrEngine(ByVal Language As String)
     Call WindowsCreateString(StrPtr(Language), Len(Language), hStringLanguage)
     'pILanguageFactory.CreateLanguage
     Call vtblCall(pILanguageFactory, 6 * PTR_SIZE, vbLong, CC_STDCALL, hStringLanguage, VarPtr(pILanguage))
-    WindowsDeleteString hStringLanguage
     If pILanguage <> 0 Then
         'pIOcrEngineStatics.TryCreateFromLanguage
         Call vtblCall(pIOcrEngineStatics, 9 * PTR_SIZE, vbLong, CC_STDCALL, pILanguage, VarPtr(pIOcrEngine))
-        ReleaseComPtr pILanguage
     End If
 End Sub
 
@@ -423,21 +425,20 @@ Private Function WaitForAsyncInterface(ByRef pIBitmapDecoder As LongPtr) As Bool
     Const MAX_RETRIES As Long = 500000
     
     Do
-        MsvcrtSleep 5  ' 5ms yield; avoids 100% CPU spin (msvcrt.dll _sleep)
         DoEvents
         'IID_IAsyncInfo.GetStatus
         Call vtblCall(pIAsyncInfo, 7 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(Status))
         lRetryCount = lRetryCount + 1
         If lRetryCount > MAX_RETRIES Then
-            ReleaseComPtr pIAsyncInfo
-            Err.Raise 9999, "WINOCR.WaitForAsyncInterface", "Timeout waiting for async operation to complete."
+            Err.Raise 9999, "UWPOCR.WaitForAsyncInterface", "Timeout waiting for async operation to complete."
+            WaitForAsyncInterface = False
+            Exit Function
         End If
     Loop Until Status <> 0
     
     Dim ErrorCode As Long
     'IID_IAsyncInfo.GetErrorCode
     Call vtblCall(pIAsyncInfo, 8 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(ErrorCode))
-    ReleaseComPtr pIAsyncInfo
     
     Dim pINewBitmapDecoder As LongPtr
     'pIBitmapDecoder.GetResults
@@ -487,20 +488,13 @@ Private Function RoGetActivationIFactory(ByVal activatableClassId As String, ByV
         Dim pFactory As LongPtr
         Call CLSIDFromString(StrPtr(sIID), pGUID)
         Call RoGetActivationFactory(hString, pGUID, pFactory)
-        WindowsDeleteString hString  ' always release, regardless of pFactory result
-        RoGetActivationIFactory = pFactory
+        If pFactory Then
+            RoGetActivationIFactory = pFactory
+            Exit Function
+        End If
     End If
 End Function
 
-
-Private Sub ReleaseComPtr(ByRef ptr As LongPtr)
-    ' Releases a WinRT/COM interface pointer and zeroes it.
-    ' IUnknown vtable: QI=0, AddRef=1, Release=2
-    If ptr <> 0 Then
-        vtblCall ptr, 2 * PTR_SIZE, vbLong, CC_STDCALL
-        ptr = 0
-    End If
-End Sub
 
 Private Function vtblCall( _
         ByVal InterfacePointer As LongPtr, _
@@ -539,7 +533,7 @@ Private Function vtblCall( _
     If hr = 0& Then ' S_OK
         vtblCall = vRtn
     Else
-        Err.Raise Number:=vbObjectError + hr, source:="WINOCR.vtblCall", Description:="DispCallFunc failed with HRESULT: " & Hex$(hr)
+        Err.Raise Number:=vbObjectError + hr, source:="UWPOCR.vtblCall", Description:="DispCallFunc failed with HRESULT: " & Hex$(hr)
     End If
 
 End Function

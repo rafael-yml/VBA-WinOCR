@@ -2,30 +2,49 @@
 
 VBA class for extracting text from images using the native Windows OCR engine (`Windows.Media.Ocr`), via direct WinRT vtable calls. No external tools, no shell execution, no admin rights, no installs.
 
-Based on [DanysysTeam/VBA-UWPOCR](https://github.com/DanysysTeam/VBA-UWPOCR).
+Originally based on [DanysysTeam/VBA-UWPOCR](https://github.com/DanysysTeam/VBA-UWPOCR). VBA-WinOCR functions in many similar ways but has since diverged significantly: it removes the `Kernel32.dll` dependency which is known to be blocked in some corporate environments, adds automatic image scaling with high-quality interpolation, and adds `BytesToText` for in-memory pipeline use.
 
-Thanks to [Jaafar Tribak - vtblCall](https://www.mrexcel.com/board/threads/late-bound-windows-media-player-going-out-of-scope.1245903/post-6110097)
+Thanks to [Jaafar Tribak - vtblCall](https://www.mrexcel.com/board/threads/late-bound-windows-media-player-going-out-of-scope.1245903/post-6110097) & [DanysysTeam/VBA-UWPOCR](https://github.com/DanysysTeam/VBA-UWPOCR)
 
 ---
 
 ## Features
 
 - Extract text from any image file (PNG, JPEG, BMP, TIFF, GIF)
+- Accept raw `Byte()` arrays directly via `BytesToText`, no file required from the caller's perspective
 - Optional line-by-line or word-by-word output with bounding box coordinates
 - Automatic image scaling when input exceeds OCR engine limits (preserves accuracy)
 - Language detection from system locale; supports any language installed in Windows
 - No external dependencies beyond what ships with Windows 10/11
-- No `Kernel32.dll` usage. Safe in environments where Defender flags low-level API calls
+- No `Kernel32.dll` usage, safe in environments where Defender flags low-level API calls
 
 ---
 
 ## Usage
 
-### Basic full text from image
+### Basic full text from image file
 
 ```vb
 Dim ocr As New WinOCR
 MsgBox ocr.ImageToText("C:\images\scan.png")(0)
+```
+
+### Full text from in-memory bytes (pipeline use)
+
+```vb
+Dim ocr As New WinOCR
+Dim pdf As New PdfWRT
+
+Dim oPages As Collection
+Set oPages = pdf.RenderPDFToBytes("C:\docs\scan.pdf")
+
+Dim page As Variant
+Dim sText As String
+For Each page In oPages
+    Dim aBytes() As Byte
+    aBytes = page
+    sText = sText & ocr.BytesToText(aBytes) & vbLf
+Next page
 ```
 
 ### With explicit language
@@ -74,9 +93,17 @@ Next l
 
 ---
 
-## ImageToText return value
+## Public API
 
-`ImageToText` always returns a `Variant()` array. `ResultArray(0)` always contains the full concatenated text string regardless of other options. When `ReturnWordsArray = True`, subsequent elements contain word info arrays.
+| Function | Returns | Description |
+|---|---|---|
+| `ImageToText(PathImage, [Language], [UseLines], [ReturnWordsArray])` | `Variant()` | OCR an image file. `result(0)` is always the full text string. |
+| `BytesToText(aImageBytes(), [Language], [UseLines])` | `String` | OCR a PNG supplied as a `Byte()` array. Returns plain text. For pipeline use with `RenderPDFToBytes` (VBA-PdfWRT) or `Word_GetImages` (VBA-WdCOM). |
+| `GetSupportedLanguages()` | `Collection` | Returns installed OCR languages. Each item is `Array(tag, displayName)`. |
+
+### ImageToText return value
+
+`ImageToText` always returns a `Variant()` array. `ResultArray(0)` always contains the full concatenated text string regardless of other options. When `ReturnWordsArray = True`, subsequent elements contain word info arrays as `Array(text, x, y, width, height)`.
 
 ---
 
@@ -89,13 +116,13 @@ Next l
 | Per-dimension cap (`MaxImageDimension`) | 5000 px on Win10 1903+, 2048 px on older builds | Engine refuses the call |
 | Total pixel budget | ~5 megapixels (internal) | Engine silently downsamples with nearest-neighbour interpolation before recognition |
 
-The nearest-neighbour downsampling the engine performs internally is low quality it produces aliasing on diagonal strokes and blurs fine text, which is the documented source of accuracy losses of up to ~40% on high-resolution inputs.
+The nearest-neighbour downsampling the engine performs internally is low quality. It produces aliasing on diagonal strokes and blurs fine text, which is the documented source of accuracy losses of up to ~40% on high-resolution inputs.
 
 **WinOCR handles this automatically.** When the input image exceeds either limit, it downsamples the bitmap itself using **Fant interpolation** (bicubic area-average, the highest quality mode available in `Windows.Graphics.Imaging`) before passing it to `RecognizeAsync`. The engine then receives a clean, properly-sampled image.
 
-You do not need to pre-scale images before calling `ImageToText`. Any resolution input is handled correctly.
+You do not need to pre-scale images before calling `ImageToText` or `BytesToText`. Any resolution input is handled correctly.
 
-**Practical implication for the PdfWRT pipeline:** When using WinOCR together with VBA-PdfWRT, you can render at any width. The recommended default of `2480px` (300 dpi for A4) produces an 8.7MP image that WinOCR will automatically scale to approximately 1876×2655 (~4.98MP) before recognition. Rendering at `4960px` (600 dpi) or higher is fine WinOCR will scale it down correctly regardless. There is no benefit to pre-scaling in PdfWRT for the purpose of OCR quality.
+**Practical implication for the PdfWRT pipeline:** When using WinOCR together with VBA-PdfWRT, you can render at any width. The recommended default of `2480px` (300 dpi for A4) produces an 8.7MP image that WinOCR will automatically scale to approximately 1876x2655 (~4.98MP) before recognition. Rendering at `4960px` (600 dpi) or higher is fine, WinOCR will scale it down correctly regardless.
 
 ---
 
@@ -122,14 +149,15 @@ All DLLs are present on every modern Windows installation.
 
 ---
 
-## Changes from original (DanysysTeam/VBA-UWPOCR)
+## Changes from DanysysTeam/VBA-UWPOCR
 
 - Replaced `Kernel32.dll` (`RtlMoveMemory`) with `msvcrt.dll` (`memcpy`) to avoid Defender triggers in corporate environments
+- Added `BytesToText` for in-memory pipeline use (accepts `Byte()` array, returns plain `String`)
 - Added timeout/retry counter to `WaitForAsyncInterface`
 - Fixed `RECT` type fields from `Single` to `Long`
 - Fixed `ResultArray` indexing bug in word array mode
-- Automatic image scaling before OCR using Fant interpolation eliminates accuracy loss from oversized inputs
-- Added `msvcrt.dll _sleep` to async poll loops eliminates 100% CPU spin during recognition
+- Automatic image scaling before OCR using Fant interpolation, eliminates accuracy loss from oversized inputs
+- Added `msvcrt.dll _sleep` to async poll loops, eliminates 100% CPU spin during recognition
 - Fixed `hString` leak in `RoGetActivationIFactory`, `hStringLanguage` leak in `CreateOcrEngine`
 - Fixed COM object leaks (`pIAsyncInfo`, `pILanguage`, `pIRandomAccessStream`, `pIBitmapTransform`)
 - Removed unreachable code after `Err.Raise` in `WaitForAsyncInterface`
@@ -140,6 +168,6 @@ All DLLs are present on every modern Windows installation.
 
 MIT License. See [LICENSE](LICENSE) for details.
 
-Copyright © 2024, [Danysys](https://www.danysys.com)
+Copyright (c) 2024, [Danysys](https://www.danysys.com)
 
-Copyright © 2026, [rafael-yml](https://rafael-yml.lovable.app/)
+Copyright (c) 2026, [rafael-yml](https://rafael-yml.lovable.app/)
