@@ -206,10 +206,6 @@ Public Function ImageToText(ByVal PathImage As String, Optional ByVal Language A
     ImageToText = ResultArray
 End Function
 
-' ---------------------------------------------------------------------------
-' Run OCR on image bytes supplied directly as a Byte array.
-' Returns the recognised text as a plain String. No files are written.
-' ---------------------------------------------------------------------------
 Public Function BytesToText(ByRef aImageBytes() As Byte, _
                              Optional ByVal Language As String = "", _
                              Optional ByVal UseLines As Boolean = False) As String
@@ -242,16 +238,14 @@ Public Function BytesToText(ByRef aImageBytes() As Byte, _
     Call vtblCall(pIStream, 4 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(aImageBytes(LBound(aImageBytes))), lByteCount, VarPtr(lWritten))
     If lWritten <> lByteCount Then Exit Function
 
-    ' Seek back to start (STREAM_SEEK_SET=0) before BitmapDecoder reads the stream
     Dim aDummy(0 To 7) As Byte
-    Call vtblCall(pIStream, 5 * PTR_SIZE, vbLong, CC_STDCALL, CCur(0), CLng(0), VarPtr(aDummy(0)))
+    Call vtblCall(pIStream, 5 * PTR_SIZE, vbLong, CC_STDCALL, CCur(0), CLng(0), VarPtr(aDummy(0)))  ' IStream.Seek(0, SEEK_SET)
+    Call vtblCall(pMemStream, 10 * PTR_SIZE, vbLong, CC_STDCALL, CCur(0))                            ' IRandomAccessStream.Seek(0)
 
-    ' Pass the in-memory stream to BitmapDecoder - identical call to ImageToText
     Dim pIBitmapDecoder As LongPtr
     Call vtblCall(pIBitmapDecoderStatics, 14 * PTR_SIZE, vbLong, CC_STDCALL, pMemStream, VarPtr(pIBitmapDecoder))
     If pIBitmapDecoder = 0 Then Exit Function
 
-    ' From here the path is identical to ImageToText
     If Language = "" And Not Languages Is Nothing Then
         If Languages.Count > 0 Then Language = Languages.Item(1)(0)
     End If
@@ -488,9 +482,9 @@ Private Function RoGetActivationIFactory(ByVal activatableClassId As String, ByV
         Dim pFactory As LongPtr
         Call CLSIDFromString(StrPtr(sIID), pGUID)
         Call RoGetActivationFactory(hString, pGUID, pFactory)
+        WindowsDeleteString hString
         If pFactory Then
             RoGetActivationIFactory = pFactory
-            Exit Function
         End If
     End If
 End Function
