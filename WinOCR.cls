@@ -18,19 +18,19 @@ End Type
 
 Private Type RECT
     x As Long
-    Y As Long
+    y As Long
     Width As Long
     Height As Long
 End Type
 
 #If VBA7 Then
-    Private Declare PtrSafe Sub MemoryCopy Lib "msvcrt.dll" Alias "memcpy" (ByVal Destination As LongPtr, ByVal source As LongPtr, ByVal Length As LongPtr)
+    Private Declare PtrSafe Sub MemoryCopy Lib "msvcrt.dll" Alias "memcpy" (ByVal Destination As LongPtr, ByVal source As LongPtr, ByVal length As LongPtr)
     Private Declare PtrSafe Function DispCallFunc Lib "oleAut32.dll" (ByVal pvInstance As LongPtr, ByVal offsetinVft As LongPtr, ByVal CallConv As Long, ByVal retTYP As Integer, ByVal paCNT As Long, ByRef paTypes As Integer, ByRef paValues As LongPtr, ByRef retVAR As Variant) As Long
     Private Declare PtrSafe Function CLSIDFromString Lib "ole32" (ByVal OleStringCLSID As LongPtr, ByRef cGUID As Any) As Long
     Private Declare PtrSafe Function RoGetActivationFactory Lib "Combase.dll" (ByVal activatableClassId As LongPtr, ByRef riid As GUID, ByRef factory As LongPtr) As Long
-    Private Declare PtrSafe Function WindowsCreateString Lib "Combase.dll" (ByVal sourceString As LongPtr, ByVal Length As Long, ByRef hString As LongPtr) As Long
+    Private Declare PtrSafe Function WindowsCreateString Lib "Combase.dll" (ByVal sourceString As LongPtr, ByVal length As Long, ByRef hString As LongPtr) As Long
     Private Declare PtrSafe Function WindowsDeleteString Lib "Combase.dll" (ByVal sourceString As LongPtr) As Long
-    Private Declare PtrSafe Function WindowsGetStringRawBuffer Lib "Combase.dll" (ByVal hString As LongPtr, ByRef Length As Long) As LongPtr
+    Private Declare PtrSafe Function WindowsGetStringRawBuffer Lib "Combase.dll" (ByVal hString As LongPtr, ByRef length As Long) As LongPtr
     Private Declare PtrSafe Function CreateRandomAccessStreamOnFile Lib "Shcore.dll" (ByVal pFilePath As LongPtr, ByVal Access As Long, ByRef riid As GUID, ByRef ppv As LongPtr) As Long
     Private Declare PtrSafe Function RoActivateInstance Lib "Combase.dll" (ByVal activatableClassId As LongPtr, ByRef instance As LongPtr) As Long
 #Else
@@ -119,39 +119,31 @@ Public Function ImageToText(ByVal PathImage As String, Optional ByVal Language A
     If pIRandomAccessStream <> 0 Then
     
         Dim pIBitmapDecoder As LongPtr
-        'pIBitmapDecoderStatics.CreateAsync
         Call vtblCall(pIBitmapDecoderStatics, 14 * PTR_SIZE, vbLong, CC_STDCALL, pIRandomAccessStream, VarPtr(pIBitmapDecoder))
         
         If pIBitmapDecoder <> 0 Then
             Dim pIOcrResult As LongPtr: pIOcrResult = GetOcrResult(pIBitmapDecoder)
             If UseLines Then
-                'use IOCRLine
                 Dim pFIVOcrLines As LongPtr
-                'pIOcrResult.Lines
                 Call vtblCall(pIOcrResult, 6 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pFIVOcrLines))
                 If pFIVOcrLines <> 0 Then
                     Dim NumberOfLines As Long
-                    'pFIVOcrLines.GetSize
                     Call vtblCall(pFIVOcrLines, 7 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(NumberOfLines))
                     If NumberOfLines > 0 Then
                         Dim pIOCRLine As LongPtr
                         Dim hStringLine As LongPtr
                         Dim i As Long
                         For i = 0 To NumberOfLines - 1
-                            'pFIVOcrLines.GetAt
                             Call vtblCall(pFIVOcrLines, 6 * PTR_SIZE, vbLong, CC_STDCALL, i, VarPtr(pIOCRLine))
                             If pIOCRLine <> 0 Then
-                                'pIOCRLine.GetText
                                 Call vtblCall(pIOCRLine, 7 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(hStringLine))
                                 result = result & HStringToVBAString(hStringLine) & vbCrLf
                                 WindowsDeleteString hStringLine
                                 If ReturnWordsArray Then
                                     Dim pFIVOcrWords As LongPtr
-                                    'pIOCRLine.GetWords
                                     Call vtblCall(pIOCRLine, 6 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pFIVOcrWords))
                                     If pFIVOcrWords <> 0 Then
                                         Dim NumberOfWords As Long
-                                        'pFIVOcrWords.GetSize
                                         Call vtblCall(pFIVOcrWords, 7 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(NumberOfWords))
                                         Dim pIOCRWord As LongPtr
                                         Dim hStringWord As LongPtr
@@ -166,18 +158,16 @@ Public Function ImageToText(ByVal PathImage As String, Optional ByVal Language A
                                             ReDim Preserve ResultArray(currentUBound + NumberOfWords)
 
                                             For x = 0 To NumberOfWords - 1
-                                                'pFIVOcrWords.GetAt
                                                 Call vtblCall(pFIVOcrWords, 6 * PTR_SIZE, vbLong, CC_STDCALL, x, VarPtr(pIOCRWord))
                                                 If pIOCRWord <> 0 Then
-                                                    'pFIVOcrWords.GetTect
                                                     Call vtblCall(pIOCRWord, 7 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(hStringWord))
-                                                    Dim pRect As RECT ' RECT type is now Longs
+                                                    Dim pRect As RECT
                                                     Call vtblCall(pIOCRWord, 6 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pRect))
                                                     Dim WordInfo(4) As Variant
                                                     
                                                     WordInfo(0) = HStringToVBAString(hStringWord)
                                                     WordInfo(1) = pRect.x
-                                                    WordInfo(2) = pRect.Y
+                                                    WordInfo(2) = pRect.y
                                                     WordInfo(3) = pRect.Width
                                                     WordInfo(4) = pRect.Height
                                                     
@@ -193,9 +183,7 @@ Public Function ImageToText(ByVal PathImage As String, Optional ByVal Language A
                     End If
                 End If
             Else
-                'use whole text
                 Dim hStringResult As LongPtr
-                'pIOcrResult.Text
                 Call vtblCall(pIOcrResult, 8 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(hStringResult))
                 result = HStringToVBAString(hStringResult)
                 WindowsDeleteString hStringResult
@@ -210,59 +198,6 @@ Public Function BytesToText(ByRef aImageBytes() As Byte, _
                              Optional ByVal Language As String = "", _
                              Optional ByVal UseLines As Boolean = False) As String
     BytesToText = ""
-    If Not IsInitialized Then Initialize
-    If Not IsInitialized Then Exit Function
-
-    ' Create an in-memory stream and load the image bytes into it via IStream.Write
-    Dim hMemRasClass As LongPtr
-    Call WindowsCreateString(StrPtr("Windows.Storage.Streams.InMemoryRandomAccessStream"), _
-                              Len("Windows.Storage.Streams.InMemoryRandomAccessStream"), hMemRasClass)
-    If hMemRasClass = 0 Then Exit Function
-
-    Dim pMemStream As LongPtr
-    Call RoActivateInstance(hMemRasClass, pMemStream)
-    WindowsDeleteString hMemRasClass
-    If pMemStream = 0 Then Exit Function
-
-    ' QI for IStream to get Write/Seek on the in-memory stream
-    Dim pIStreamGUID As GUID
-    Call CLSIDFromString(StrPtr("{0000000C-0000-0000-C000-000000000046}"), pIStreamGUID)
-    Dim pIStream As LongPtr
-    Call vtblCall(pMemStream, 0 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pIStreamGUID), VarPtr(pIStream))
-    If pIStream = 0 Then Exit Function
-
-    ' Write all bytes into the stream (IStream.Write - offset 4)
-    Dim lByteCount As Long
-    lByteCount = UBound(aImageBytes) - LBound(aImageBytes) + 1
-    Dim lWritten As Long
-    Call vtblCall(pIStream, 4 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(aImageBytes(LBound(aImageBytes))), lByteCount, VarPtr(lWritten))
-    If lWritten <> lByteCount Then Exit Function
-
-    Dim aDummy(0 To 7) As Byte
-    Call vtblCall(pIStream, 5 * PTR_SIZE, vbLong, CC_STDCALL, CCur(0), CLng(0), VarPtr(aDummy(0)))  ' IStream.Seek(0, SEEK_SET)
-    Call vtblCall(pMemStream, 10 * PTR_SIZE, vbLong, CC_STDCALL, CCur(0))                            ' IRandomAccessStream.Seek(0)
-
-    Dim pIBitmapDecoder As LongPtr
-    Call vtblCall(pIBitmapDecoderStatics, 14 * PTR_SIZE, vbLong, CC_STDCALL, pMemStream, VarPtr(pIBitmapDecoder))
-    If pIBitmapDecoder = 0 Then Exit Function
-
-    If Language = "" And Not Languages Is Nothing Then
-        If Languages.Count > 0 Then Language = Languages.Item(1)(0)
-    End If
-    If Language <> "" And pIOcrEngine = 0 Then CreateOcrEngine Language
-    If CurrentLanguage = "" Or CurrentLanguage <> Language Or pIOcrEngine = 0 Then
-        CreateOcrEngine Language
-    End If
-    If pIOcrEngine = 0 Then Exit Function
-
-    Dim pIOcrResult As LongPtr
-    pIOcrResult = GetOcrResult(pIBitmapDecoder)
-    If pIOcrResult = 0 Then Exit Function
-
-    Dim hStringResult As LongPtr
-    Call vtblCall(pIOcrResult, 8 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(hStringResult))
-    BytesToText = HStringToVBAString(hStringResult)
-    WindowsDeleteString hStringResult
 End Function
 
 Private Function GetOcrResult(ByRef pIBitmapDecoder As LongPtr) As LongPtr
@@ -277,12 +212,10 @@ Private Function GetOcrResult(ByRef pIBitmapDecoder As LongPtr) As LongPtr
                 Dim pIBitmapFrameWithSoftwareBitmap As LongPtr: pIBitmapFrameWithSoftwareBitmap = GetBitmapFrameWithSoftwareBitmap(pIBitmapDecoder)
                 If pIBitmapFrameWithSoftwareBitmap <> 0 Then
                     Dim pISoftwareBitmap As LongPtr
-                    'pIBitmapFrameWithSoftwareBitmap.GetSoftwareBitmapAsync
                     Call vtblCall(pIBitmapFrameWithSoftwareBitmap, 6 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pISoftwareBitmap))
                     If pISoftwareBitmap <> 0 Then
                         If WaitForAsyncInterface(pISoftwareBitmap) Then
                             Dim pIOcrResult  As LongPtr
-                            'pIOcrEngine.RecognizeAsync
                             Call vtblCall(pIOcrEngine, 6 * PTR_SIZE, vbLong, CC_STDCALL, pISoftwareBitmap, VarPtr(pIOcrResult))
                             If WaitForAsyncInterface(pIOcrResult) Then
                                 GetOcrResult = pIOcrResult
@@ -309,11 +242,9 @@ Public Function GetSupportedLanguages() As Collection
    
     
     Dim pFIVLanguages As LongPtr
-    'pIGlobalizationPreferencesStatics.GetLanguages
     Call vtblCall(pIGlobalizationPreferencesStatics, 9 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pFIVLanguages))
     
     Dim iCountLenguages As Long
-    'pFIVLanguages.GetSize
     Call vtblCall(pFIVLanguages, 7 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(iCountLenguages))
     
     Dim Language As String
@@ -324,12 +255,10 @@ Public Function GetSupportedLanguages() As Collection
         
         For i = 0 To iCountLenguages - 1
         
-            'pFIVLanguages.GetAt
             Call vtblCall(pFIVLanguages, 6 * PTR_SIZE, vbLong, CC_STDCALL, i, VarPtr(hStringLanguage))
             Language = HStringToVBAString(hStringLanguage)
             If Language <> "" Then
                
-                'pILanguageFactory.CreateLanguage
                 Call vtblCall(pILanguageFactory, 6 * PTR_SIZE, vbLong, CC_STDCALL, hStringLanguage, VarPtr(pILanguage))
                 If pILanguage <> 0 Then
                     Dim hStringLanguageTag As LongPtr
@@ -337,16 +266,13 @@ Public Function GetSupportedLanguages() As Collection
                     Dim LanguageTag As String
                     Dim LanguageDisplayName As String
                     
-                    'pILanguage.GetLanguageTag
                     Call vtblCall(pILanguage, 6 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(hStringLanguageTag))
-                    'pILanguage.GetDisplayName
                     Call vtblCall(pILanguage, 7 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(hStringLanguageDisplayName))
                 
                     LanguageTag = HStringToVBAString(hStringLanguageTag)
                     LanguageDisplayName = HStringToVBAString(hStringLanguageDisplayName)
                     
                     Dim IsLanguageSupported As Boolean
-                    'pIOcrEngineStatics.IsLanguageSupported
                     Call vtblCall(pIOcrEngineStatics, 8 * PTR_SIZE, vbLong, CC_STDCALL, pILanguage, VarPtr(IsLanguageSupported))
                     
                     If IsLanguageSupported Then
@@ -374,35 +300,29 @@ Private Sub CreateOcrEngine(ByVal Language As String)
     Dim pILanguage As LongPtr
     Dim hStringLanguage As LongPtr
     Call WindowsCreateString(StrPtr(Language), Len(Language), hStringLanguage)
-    'pILanguageFactory.CreateLanguage
     Call vtblCall(pILanguageFactory, 6 * PTR_SIZE, vbLong, CC_STDCALL, hStringLanguage, VarPtr(pILanguage))
     If pILanguage <> 0 Then
-        'pIOcrEngineStatics.TryCreateFromLanguage
         Call vtblCall(pIOcrEngineStatics, 9 * PTR_SIZE, vbLong, CC_STDCALL, pILanguage, VarPtr(pIOcrEngine))
     End If
 End Sub
 
 Private Function GetBitmapWidth(ByRef pIBitmapFrame As LongPtr) As Long
-    'pIBitmapFrame.PixelWidth
     Call vtblCall(pIBitmapFrame, 12 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(GetBitmapWidth))
 End Function
 
 Private Function GetBitmapHeight(ByRef pIBitmapFrame As LongPtr) As Long
-    'pIBitmapFrame.PixelHeight
     Call vtblCall(pIBitmapFrame, 13 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(GetBitmapHeight))
 End Function
 
 Private Function GetBitmapFrameWithSoftwareBitmap(ByRef pIBitmapDecoder As LongPtr) As LongPtr
     Dim pGUID As GUID
     Call CLSIDFromString(StrPtr("{FE287C9A-420C-4963-87AD-691436E08383}"), pGUID) 'IID_IBitmapFrameWithSoftwareBitmap
-    'pIBitmapDecoder.QueryInterface
     Call vtblCall(pIBitmapDecoder, 0 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pGUID), VarPtr(GetBitmapFrameWithSoftwareBitmap))
 End Function
 
 Private Function GetBitmapFrame(ByRef pIBitmapDecoder As LongPtr) As LongPtr
     Dim pGUID As GUID
     Call CLSIDFromString(StrPtr("{72A49A1C-8081-438D-91BC-94ECFC8185C6}"), pGUID) 'IID_IBitmapFrame
-    'pIBitmapDecoder.QueryInterface
     Call vtblCall(pIBitmapDecoder, 0 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pGUID), VarPtr(GetBitmapFrame))
 End Function
 
@@ -411,7 +331,6 @@ Private Function WaitForAsyncInterface(ByRef pIBitmapDecoder As LongPtr) As Bool
     Dim pIAsyncInfo As LongPtr
     Dim pGUID As GUID
     Call CLSIDFromString(StrPtr("{00000036-0000-0000-C000-000000000046}"), pGUID) 'IID_IAsyncInfo
-    'pIBitmapDecoder.QueryInterface
     Call vtblCall(pIBitmapDecoder, 0 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pGUID), VarPtr(pIAsyncInfo))
      
     Dim Status As Long
@@ -420,7 +339,6 @@ Private Function WaitForAsyncInterface(ByRef pIBitmapDecoder As LongPtr) As Bool
     
     Do
         DoEvents
-        'IID_IAsyncInfo.GetStatus
         Call vtblCall(pIAsyncInfo, 7 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(Status))
         lRetryCount = lRetryCount + 1
         If lRetryCount > MAX_RETRIES Then
@@ -431,11 +349,9 @@ Private Function WaitForAsyncInterface(ByRef pIBitmapDecoder As LongPtr) As Bool
     Loop Until Status <> 0
     
     Dim ErrorCode As Long
-    'IID_IAsyncInfo.GetErrorCode
     Call vtblCall(pIAsyncInfo, 8 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(ErrorCode))
     
     Dim pINewBitmapDecoder As LongPtr
-    'pIBitmapDecoder.GetResults
     Call vtblCall(pIBitmapDecoder, 8 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pINewBitmapDecoder))
     
     pIBitmapDecoder = pINewBitmapDecoder
@@ -466,7 +382,6 @@ Private Function HStringToVBAString(ByVal hString As LongPtr) As String
     
     If pBuffer <> 0 And iLength <> 0 Then
         Buffer = String$(iLength, vbNull)
-        ' Use memcpy from msvcrt.dll
         MemoryCopy ByVal StrPtr(Buffer), ByVal pBuffer, iLength * 2 ' iLength * 2 for WideChars
     End If
     
@@ -482,9 +397,9 @@ Private Function RoGetActivationIFactory(ByVal activatableClassId As String, ByV
         Dim pFactory As LongPtr
         Call CLSIDFromString(StrPtr(sIID), pGUID)
         Call RoGetActivationFactory(hString, pGUID, pFactory)
-        WindowsDeleteString hString
         If pFactory Then
             RoGetActivationIFactory = pFactory
+            Exit Function
         End If
     End If
 End Function
@@ -531,3 +446,5 @@ Private Function vtblCall( _
     End If
 
 End Function
+
+
