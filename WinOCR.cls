@@ -33,6 +33,7 @@ End Type
     Private Declare PtrSafe Function WindowsGetStringRawBuffer Lib "Combase.dll" (ByVal hString As LongPtr, ByRef length As Long) As LongPtr
     Private Declare PtrSafe Function CreateRandomAccessStreamOnFile Lib "Shcore.dll" (ByVal pFilePath As LongPtr, ByVal Access As Long, ByRef riid As GUID, ByRef ppv As LongPtr) As Long
     Private Declare PtrSafe Function RoActivateInstance Lib "Combase.dll" (ByVal activatableClassId As LongPtr, ByRef instance As LongPtr) As Long
+    Private Declare PtrSafe Function CoCreateGuid Lib "ole32" (ByRef pguid As GUID) As Long
 #Else
     Private Declare Sub MemoryCopy Lib "msvcrt.dll" Alias "memcpy" (ByVal Destination As Long, ByVal Source As Long, ByVal Length As Long)
 
@@ -48,6 +49,7 @@ End Type
     Private Declare Function WindowsGetStringRawBuffer Lib "Combase.dll" (ByVal hString As Long, ByRef Length As Long) As Long
     Private Declare Function CreateRandomAccessStreamOnFile Lib "Shcore.dll" (ByVal pFilePath As Long, ByVal Access As Long, ByRef riid As GUID, ByRef ppv As Long) As Long
     Private Declare Function RoActivateInstance Lib "Combase.dll" (ByVal activatableClassId As Long, ByRef instance As Long) As Long
+    Private Declare Function CoCreateGuid Lib "ole32" (ByRef pguid As GUID) As Long
 #End If
 
 
@@ -198,6 +200,37 @@ Public Function BytesToText(ByRef aImageBytes() As Byte, _
                              Optional ByVal Language As String = "", _
                              Optional ByVal UseLines As Boolean = False) As String
     BytesToText = ""
+    If Not IsInitialized Then Initialize
+    If Not IsInitialized Then Exit Function
+
+    Dim sTmp As String
+    sTmp = WinOCR_TempPath()
+
+    Dim iFile As Integer
+    On Error GoTo Cleanup
+    iFile = FreeFile
+    Open sTmp For Binary Access Write As #iFile
+    Put #iFile, , aImageBytes
+    Close #iFile
+    iFile = 0
+
+    Dim vResult As Variant
+    vResult = ImageToText(sTmp, Language, UseLines)
+    If IsArray(vResult) Then
+        If UBound(vResult) >= 0 Then BytesToText = CStr(vResult(0))
+    End If
+
+Cleanup:
+    On Error Resume Next
+    If iFile > 0 Then Close #iFile
+    Kill sTmp
+    On Error GoTo 0
+End Function
+
+Private Function WinOCR_TempPath() As String
+    Dim g As GUID
+    CoCreateGuid g
+    WinOCR_TempPath = Environ("TEMP") & "\winocr_" & Right$("00000000" & Hex$(g.Data1), 8) & ".png"
 End Function
 
 Private Function GetOcrResult(ByRef pIBitmapDecoder As LongPtr) As LongPtr
@@ -243,7 +276,11 @@ Public Function GetSupportedLanguages() As Collection
     
     Dim pFIVLanguages As LongPtr
     Call vtblCall(pIGlobalizationPreferencesStatics, 9 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(pFIVLanguages))
-    
+    If pFIVLanguages = 0 Then
+        Set GetSupportedLanguages = Languages
+        Exit Function
+    End If
+
     Dim iCountLenguages As Long
     Call vtblCall(pFIVLanguages, 7 * PTR_SIZE, vbLong, CC_STDCALL, VarPtr(iCountLenguages))
     
@@ -343,8 +380,6 @@ Private Function WaitForAsyncInterface(ByRef pIBitmapDecoder As LongPtr) As Bool
         lRetryCount = lRetryCount + 1
         If lRetryCount > MAX_RETRIES Then
             Err.Raise 9999, "UWPOCR.WaitForAsyncInterface", "Timeout waiting for async operation to complete."
-            WaitForAsyncInterface = False
-            Exit Function
         End If
     Loop Until Status <> 0
     
@@ -397,9 +432,9 @@ Private Function RoGetActivationIFactory(ByVal activatableClassId As String, ByV
         Dim pFactory As LongPtr
         Call CLSIDFromString(StrPtr(sIID), pGUID)
         Call RoGetActivationFactory(hString, pGUID, pFactory)
+        WindowsDeleteString hString
         If pFactory Then
             RoGetActivationIFactory = pFactory
-            Exit Function
         End If
     End If
 End Function
@@ -446,5 +481,3 @@ Private Function vtblCall( _
     End If
 
 End Function
-
-
