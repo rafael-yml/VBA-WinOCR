@@ -69,6 +69,20 @@ Private pIOcrEngine As LongPtr
 Private CurrentLanguage As String
 Private IsInitialized As Boolean
 Private Languages As Collection
+Private m_lStatus As Long
+
+' ---------------------------------------------------------------------------
+' Status codes returned by LastStatus after each ImageToText / BytesToText call.
+' ---------------------------------------------------------------------------
+Public Const WINOCR_OK        As Long = 0  ' text recognised successfully
+Public Const WINOCR_NO_ENGINE As Long = 1  ' language not installed / engine unavailable
+Public Const WINOCR_TOO_LARGE As Long = 2  ' image exceeds OcrEngine.MaxImageDimension
+Public Const WINOCR_EMPTY     As Long = 3  ' OCR completed but returned no text
+Public Const WINOCR_FAIL      As Long = 4  ' file missing, decode error, or init failure
+
+Public Property Get LastStatus() As Long
+    LastStatus = m_lStatus
+End Property
 
 Private Sub Initialize()
     pILanguageFactory = RoGetActivationIFactory("Windows.Globalization.Language", "{9B0252AC-0C27-44F8-B792-9793FB66C63E}") 'IID_ILanguageFactory
@@ -85,6 +99,7 @@ Public Function ImageToText(ByVal PathImage As String, Optional ByVal Language A
     Dim result As String
     Dim ResultArray() As Variant
     ReDim ResultArray(0)
+    m_lStatus = WINOCR_FAIL
     
     If Not IsInitialized Then
         Initialize
@@ -107,19 +122,24 @@ Public Function ImageToText(ByVal PathImage As String, Optional ByVal Language A
                 Exit For
             End If
         Next
-        If Not Supported Then Err.Raise 1, , "Language '" & Language & "' not supported"
+        If Not Supported Then
+            m_lStatus = WINOCR_NO_ENGINE
+            Err.Raise 1, , "Language '" & Language & "' not supported"
+        End If
     End If
     
     If CurrentLanguage = "" Or CurrentLanguage <> Language Or pIOcrEngine = 0 Then
         CreateOcrEngine Language
     End If
     
-    If pIOcrEngine = 0 Then Err.Raise 2, , "Unable to create OcrEngine"
+    If pIOcrEngine = 0 Then
+        m_lStatus = WINOCR_NO_ENGINE
+        Err.Raise 2, , "Unable to create OcrEngine"
+    End If
     
     
     Dim pIRandomAccessStream As LongPtr: pIRandomAccessStream = CreateStreamOnFile(PathImage)
     If pIRandomAccessStream <> 0 Then
-    
         Dim pIBitmapDecoder As LongPtr
         Call vtblCall(pIBitmapDecoderStatics, 14 * PTR_SIZE, vbLong, CC_STDCALL, pIRandomAccessStream, VarPtr(pIBitmapDecoder))
         
@@ -193,13 +213,25 @@ Public Function ImageToText(ByVal PathImage As String, Optional ByVal Language A
         End If
     End If
     ResultArray(0) = result
+    If m_lStatus = WINOCR_FAIL Or m_lStatus = WINOCR_TOO_LARGE Then
+        ' Keep FAIL (stream/decode error) or TOO_LARGE — don't downgrade to EMPTY
+    ElseIf Len(Trim$(result)) > 0 Then
+        m_lStatus = WINOCR_OK
+    Else
+        m_lStatus = WINOCR_EMPTY
+    End If
     ImageToText = ResultArray
 End Function
 
 Public Function BytesToText(ByRef aImageBytes() As Byte, _
                              Optional ByVal Language As String = "", _
                              Optional ByVal UseLines As Boolean = False) As String
+    ' Writes image bytes to a transient temp file, runs ImageToText, then deletes the file.
+    ' Avoids the STA/async-callback crash of the pure in-memory InMemoryRandomAccessStream
+    ' approach: WinRT async completions cannot marshal back to VBA's STA via DoEvents alone.
+    ' From the caller's perspective this is still memory-in / text-out with no visible files.
     BytesToText = ""
+    m_lStatus = WINOCR_FAIL
     If Not IsInitialized Then Initialize
     If Not IsInitialized Then Exit Function
 
@@ -256,6 +288,8 @@ Private Function GetOcrResult(ByRef pIBitmapDecoder As LongPtr) As LongPtr
                         End If
                     End If
                 End If
+            Else
+                m_lStatus = WINOCR_TOO_LARGE
             End If
         End If
     End If
@@ -338,6 +372,7 @@ Private Sub CreateOcrEngine(ByVal Language As String)
     Dim hStringLanguage As LongPtr
     Call WindowsCreateString(StrPtr(Language), Len(Language), hStringLanguage)
     Call vtblCall(pILanguageFactory, 6 * PTR_SIZE, vbLong, CC_STDCALL, hStringLanguage, VarPtr(pILanguage))
+    WindowsDeleteString hStringLanguage
     If pILanguage <> 0 Then
         Call vtblCall(pIOcrEngineStatics, 9 * PTR_SIZE, vbLong, CC_STDCALL, pILanguage, VarPtr(pIOcrEngine))
     End If
