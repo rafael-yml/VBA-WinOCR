@@ -11,7 +11,7 @@ Thanks to [Jaafar Tribak - vtblCall](https://www.mrexcel.com/board/threads/late-
 ## Features
 
 - Extract text from any image file (PNG, JPEG, BMP, TIFF, GIF)
-- Accept raw `Byte()` arrays directly via `BytesToText`, no file required from the caller's perspective
+- Accept raw `Byte()` arrays directly via `BytesToText`. Writes a GUID-named temp file internally, no visible disk activity from the caller's perspective
 - Optional line-by-line or word-by-word output with bounding box coordinates
 - Automatic image scaling when input exceeds OCR engine limits (preserves accuracy)
 - Language detection from system locale; supports any language installed in Windows
@@ -98,7 +98,7 @@ Next l
 | Function | Returns | Description |
 |---|---|---|
 | `ImageToText(PathImage, [Language], [UseLines], [ReturnWordsArray])` | `Variant()` | OCR an image file. `result(0)` is always the full text string. |
-| `BytesToText(aImageBytes(), [Language], [UseLines])` | `String` | OCR a PNG supplied as a `Byte()` array. Returns plain text. For pipeline use with `RenderPDFToBytes` (VBA-PdfWRT) or `Word_GetImages` (VBA-WdCOM). |
+| `BytesToText(aImageBytes(), [Language], [UseLines])` | `String` | OCR a PNG supplied as a `Byte()` array. Returns plain text. For pipeline use with `RenderPDFToBytes` (VBA-PdfWRT) or `GetImages` (VBA-WdCOM). |
 | `GetSupportedLanguages()` | `Collection` | Returns installed OCR languages. Each item is `Array(tag, displayName)`. |
 
 ### ImageToText return value
@@ -106,6 +106,30 @@ Next l
 `ImageToText` always returns a `Variant()` array. `ResultArray(0)` always contains the full concatenated text string regardless of other options. When `ReturnWordsArray = True`, subsequent elements contain word info arrays as `Array(text, x, y, width, height)`.
 
 ---
+
+---
+
+## Status codes
+
+`LastStatus` is set after every `ImageToText` and `BytesToText` call.
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `WINOCR_OK` | 0 | Text recognised successfully |
+| `WINOCR_NO_ENGINE` | 1 | Language not installed or engine unavailable |
+| `WINOCR_TOO_LARGE` | 2 | Image exceeds `OcrEngine.MaxImageDimension` |
+| `WINOCR_EMPTY` | 3 | OCR completed but returned no text |
+| `WINOCR_FAIL` | 4 | File missing, decode error, or init failure |
+
+```vb
+Dim ocr As New WinOCR
+ocr.ImageToText "C:\scan.png"
+Select Case ocr.LastStatus
+    Case WINOCR_OK:        ' text in result(0)
+    Case WINOCR_TOO_LARGE: ' image too large, try lower render width
+    Case WINOCR_EMPTY:     ' page was blank
+End Select
+```
 
 ## Resolution and OCR accuracy
 
@@ -135,7 +159,7 @@ All DLLs are present on every modern Windows installation.
 | `Combase.dll` | `RoGetActivationFactory`, `RoActivateInstance`, `WindowsCreateString`, `WindowsDeleteString`, `WindowsGetStringRawBuffer` |
 | `Shcore.dll` | `CreateRandomAccessStreamOnFile` |
 | `oleAut32.dll` | `DispCallFunc` (vtable call dispatcher) |
-| `ole32.dll` | `CLSIDFromString` |
+| `ole32.dll` | `CLSIDFromString`, `CoCreateGuid` |
 | `msvcrt.dll` | `memcpy` (wide-char copy), `_sleep` (non-blocking async poll) |
 
 ---
@@ -161,6 +185,9 @@ All DLLs are present on every modern Windows installation.
 - Fixed `hString` leak in `RoGetActivationIFactory`, `hStringLanguage` leak in `CreateOcrEngine`
 - Fixed COM object leaks (`pIAsyncInfo`, `pILanguage`, `pIRandomAccessStream`, `pIBitmapTransform`)
 - Removed unreachable code after `Err.Raise` in `WaitForAsyncInterface`
+- `LastStatus` property and `WINOCR_*` status codes added
+- `WINOCR_TOO_LARGE` reported when image exceeds `MaxImageDimension`
+- `pFIVLanguages` null guard added in `GetSupportedLanguages`
 
 ---
 
@@ -168,6 +195,6 @@ All DLLs are present on every modern Windows installation.
 
 MIT License. See [LICENSE](LICENSE) for details.
 
-Copyright (c) 2024, [Danysys](https://www.danysys.com)
+Copyright © 2024, [Danysys](https://www.danysys.com)
 
-Copyright (c) 2026, [rafael-yml](https://rafael-yml.lovable.app/)
+Copyright © 2026, [rafael-yml](https://rafael-yml.lovable.app/)
