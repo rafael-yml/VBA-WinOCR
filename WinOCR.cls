@@ -74,11 +74,11 @@ Private m_lStatus As Long
 ' ---------------------------------------------------------------------------
 ' Status codes returned by LastStatus after each ImageToText / BytesToText call.
 ' ---------------------------------------------------------------------------
-Public Const WINOCR_OK        As Long = 0  ' text recognised successfully
-Public Const WINOCR_NO_ENGINE As Long = 1  ' language not installed / engine unavailable
-Public Const WINOCR_TOO_LARGE As Long = 2  ' image exceeds OcrEngine.MaxImageDimension
-Public Const WINOCR_EMPTY     As Long = 3  ' OCR completed but returned no text
-Public Const WINOCR_FAIL      As Long = 4  ' file missing, decode error, or init failure
+Private Const WINOCR_OK        As Long = 0  ' text recognised successfully
+Private Const WINOCR_NO_ENGINE As Long = 1  ' language not installed / engine unavailable
+Private Const WINOCR_TOO_LARGE As Long = 2  ' image exceeds OcrEngine.MaxImageDimension
+Private Const WINOCR_EMPTY     As Long = 3  ' OCR completed but returned no text
+Private Const WINOCR_FAIL      As Long = 4  ' file missing, decode error, or init failure
 
 Public Property Get LastStatus() As Long
     LastStatus = m_lStatus
